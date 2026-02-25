@@ -12,7 +12,7 @@ from influxdb_client.client.write_api import SYNCHRONOUS
 
 load_dotenv()
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 DB_PATH = os.getenv('DATABASE_URL', '/app/database/configuracoes.db')
 URL_CW = os.getenv('CHATWOOT_URL')

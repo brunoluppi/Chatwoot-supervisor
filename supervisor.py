@@ -60,20 +60,25 @@ def sincronizar_com_chatwoot():
 @app.route('/api/operadores', methods=['GET', 'POST', 'OPTIONS'])
 def gerenciar_operadores():
     if request.method == 'OPTIONS': return jsonify({"status": "ok"}), 200
+    
     if request.method == 'GET':
         sincronizar_com_chatwoot()
-        conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
-        rows = [dict(r) for r in conn.execute("SELECT * FROM escalas ORDER BY nome ASC").fetchall()]
+        # Captura o nome do agente enviado pelo Grafana
+        nome_filtro = request.args.get('nome')
+        
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        
+        if nome_filtro:
+            # Retorna apenas o agente selecionado no topo do dashboard
+            row = conn.execute("SELECT * FROM escalas WHERE nome = ?", (nome_filtro,)).fetchone()
+            conn.close()
+            return jsonify(dict(row) if row else {})
+        
+        # Fallback: retorna tudo (útil para debug via curl)
+        rows = [dict(r) for r in conn.execute("SELECT * FROM escalas").fetchall()]
         conn.close()
         return jsonify(rows)
-    if request.method == 'POST':
-        data = request.json
-        campos = ['agente_id', 'nome', 'ativo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado', 'domingo']
-        valores = [str(data.get(c, "")) if c != 'ativo' else int(data.get(c, 1)) for c in campos]
-        conn = sqlite3.connect(DB_PATH); c = conn.cursor()
-        c.execute(f"INSERT OR REPLACE INTO escalas ({','.join(campos)}) VALUES ({','.join(['?']*10)})", valores)
-        conn.commit(); conn.close()
-        return jsonify({"status": "sucesso"}), 200
 
 def registrar_metrica(nome, user_id, status_det, status_for, evento):
     """Grava no InfluxDB. Note que o 'evento' agora é uma tag para histórico."""

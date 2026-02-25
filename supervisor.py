@@ -5,31 +5,36 @@ import threading
 import time
 from datetime import datetime
 from flask import Flask, request, jsonify
-from flask_cors import CORS # Necessário para o Grafana externo acessar a API
+from flask_cors import CORS
 from dotenv import load_dotenv
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
 
 load_dotenv()
 app = Flask(__name__)
-CORS(app) # Libera o Grafana para fazer chamadas cross-origin
+CORS(app)
 
-DB_PATH = "configuracoes.db"
+# --- CONFIGURAÇÕES ---
+DB_PATH = os.getenv('DATABASE_URL', '/app/database/configuracoes.db')
+URL_CW = os.getenv('CHATWOOT_URL')
+TOKEN_CW = os.getenv('CHATWOOT_ACCESS_TOKEN')
+ACC_ID = os.getenv('CHATWOOT_ACCOUNT_ID', '1')
+HEADERS_CW = {"api_access_token": TOKEN_CW}
 
-# --- CONFIGURAÇÃO INFLUXDB ---
-INFLUX_CLIENT = InfluxDBClient(url=os.getenv('INFLUXDB_URL'), token=os.getenv('INFLUXDB_TOKEN'), org=os.getenv('INFLUXDB_ORG'))
-WRITE_API = INFLUX_CLIENT.write_api(write_options=SYNCHRONOUS)
-
-# --- CONFIGURAÇÃO CHATWOOT ---
-URL = os.getenv('CHATWOOT_URL')
-TOKEN = os.getenv('CHATWOOT_ACCESS_TOKEN')
-ACCOUNT_ID = os.getenv('CHATWOOT_ACCOUNT_ID', '1')
-HEADERS = {"api_access_token": TOKEN}
+# InfluxDB
+client_influx = InfluxDBClient(
+    url=os.getenv('INFLUXDB_URL'), 
+    token=os.getenv('INFLUXDB_TOKEN'), 
+    org=os.getenv('INFLUXDB_ORG')
+)
+write_api = client_influx.write_api(write_options=SYNCHRONOUS)
+BUCKET = os.getenv('INFLUXDB_BUCKET')
 
 DIAS_MAP = {0: 'segunda', 1: 'terca', 2: 'quarta', 3: 'quinta', 4: 'sexta', 5: 'sabado', 6: 'domingo'}
 
-# --- BANCO DE DADOS LOCAL (CONTROLE) ---
+# --- BANCO DE DADOS (SQLite Persistente) ---
 def init_db():
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS escalas (
@@ -41,109 +46,76 @@ def init_db():
     conn.commit()
     conn.close()
 
-# --- ROTAS DE GESTÃO PARA O GRAFANA ---
-
+# --- API DE GESTÃO (Para Grafana Externo) ---
 @app.route('/api/operadores', methods=['GET'])
-def listar_operadores():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT * FROM escalas")
-    rows = [dict(r) for r in c.fetchall()]
+def listar():
+    conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
+    rows = [dict(r) for r in conn.execute("SELECT * FROM escalas").fetchall()]
     conn.close()
     return jsonify(rows)
 
 @app.route('/api/operadores', methods=['POST'])
-def salvar_operador():
+def salvar():
     data = request.json
-    # Espera JSON com todos os dias: {"agente_id": "1", "nome": "Luppi", "segunda": "08:00-18:00", ...}
     campos = ['agente_id', 'nome', 'ativo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado', 'domingo']
     valores = [data.get(c) for c in campos]
-    
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute(f"INSERT OR REPLACE INTO escalas ({','.join(campos)}) VALUES ({','.join(['?']*10)})", valores)
-    conn.commit()
-    conn.close()
+    conn.commit(); conn.close()
     return jsonify({"status": "sucesso"})
 
 @app.route('/api/operadores/<id>', methods=['DELETE'])
-def excluir_operador(id):
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
+def excluir(id):
+    conn = sqlite3.connect(DB_PATH); c = conn.cursor()
     c.execute("DELETE FROM escalas WHERE agente_id = ?", (id,))
-    conn.commit()
-    conn.close()
+    conn.commit(); conn.close()
     return jsonify({"status": "excluido"})
 
-# --- LÓGICA DE SENTINELA ---
-
+# --- LÓGICA SENTINELA ---
 def get_status_esperado(user_id):
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    c.execute("SELECT * FROM escalas WHERE agente_id = ? AND ativo = 1", (str(user_id),))
-    row = c.fetchone()
+    conn = sqlite3.connect(DB_PATH); conn.row_factory = sqlite3.Row
+    row = conn.execute("SELECT * FROM escalas WHERE agente_id = ? AND ativo = 1", (str(user_id),)).fetchone()
     conn.close()
-    
     if not row: return None
-
-    agora = datetime.now()
-    hora_atual = agora.strftime("%H:%M")
-    dia_semana = DIAS_MAP[agora.weekday()]
     
-    escala_dia = row[dia_semana] # Formato: "08:00-12:00,13:00-18:00"
-    if not escala_dia or escala_dia.strip() == "": return "offline"
-
-    try:
-        turnos = escala_dia.split(',')
-        for turno in turnos:
+    escala_dia = row[DIAS_MAP[datetime.now().weekday()]]
+    if not escala_dia: return "offline"
+    
+    hora_atual = datetime.now().strftime("%H:%M")
+    for turno in escala_dia.split(','):
+        try:
             inicio, fim = turno.split('-')
-            if inicio.strip() <= hora_atual < fim.strip():
-                return "online"
-    except: pass
-    
+            if inicio.strip() <= hora_atual < fim.strip(): return "online"
+        except: continue
     return "offline"
 
-def registrar_influx(nome, user_id, status_det, status_for, evento):
+def registrar_metrica(nome, user_id, status_det, status_for, evento):
     try:
-        point = Point("status_agentes") \
-            .tag("agente_id", str(user_id)).tag("nome", nome).tag("evento", evento) \
-            .field("conformidade", 1 if status_det == status_for else 0) \
-            .field("status_real", status_det) \
-            .time(datetime.utcnow(), WritePrecision.NS)
-        WRITE_API.write(bucket=os.getenv('INFLUXDB_BUCKET'), record=point)
-    except Exception as e:
-        print(f"Erro Influx: {e}")
+        p = Point("status_agentes").tag("agente_id", str(user_id)).tag("nome", nome).tag("evento", evento) \
+            .field("conformidade", 1 if status_det == status_for else 0).field("status_real", status_det)
+        write_api.write(bucket=BUCKET, record=p)
+    except Exception as e: print(f"Erro Influx: {e}")
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.json
-    user_id = data.get('id')
-    status_atual = data.get('availability_status')
-    nome = data.get('name', 'Desconhecido')
-    
-    status_correto = get_status_esperado(user_id)
-    
-    if status_correto and status_atual != status_correto:
-        requests.put(f"{URL}/api/v1/accounts/{ACCOUNT_ID}/agents/{user_id}", 
-                     json={"availability": status_correto}, headers=HEADERS, timeout=5)
-        registrar_influx(nome, user_id, status_atual, status_correto, "VIOLACAO_MANUAL")
+    uid, status_at, nome = data.get('id'), data.get('availability_status'), data.get('name')
+    status_esp = get_status_esperado(uid)
+    if status_esp and status_at != status_esp:
+        requests.put(f"{URL_CW}/api/v1/accounts/{ACC_ID}/agents/{uid}", json={"availability": status_esp}, headers=HEADERS_CW)
+        registrar_metrica(nome, uid, status_at, status_esp, "VIOLACAO_MANUAL")
     else:
-        registrar_influx(nome, user_id, status_atual, status_atual or "offline", "SINC_ROTINA")
-        
-    return jsonify({"status": "ok"}), 200
+        registrar_metrica(nome, uid, status_at, status_esp or "offline", "SINC_ROTINA")
+    return jsonify({"status": "ok"})
 
-# --- AUDITORIA DE PRESENÇA (THREADS) ---
 def auditoria_loop():
     while True:
         try:
-            r = requests.get(f"{URL}/api/v1/accounts/{ACCOUNT_ID}/agents", headers=HEADERS, timeout=10)
-            agentes = r.json()
+            agentes = requests.get(f"{URL_CW}/api/v1/accounts/{ACC_ID}/agents", headers=HEADERS_CW).json()
             for ag in agentes:
                 status_esp = get_status_esperado(ag['id'])
                 if status_esp == "online" and ag['availability_status'] == "offline":
-                    registrar_influx(ag['name'], ag['id'], "offline", "online", "AUSENCIA_DETECTADA")
+                    registrar_metrica(ag['name'], ag['id'], "offline", "online", "AUSENCIA_DETECTADA")
         except: pass
         time.sleep(300)
 

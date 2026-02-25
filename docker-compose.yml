@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  sentinela:
+    build: 
+      context: https://github.com/brunoluppi/Chatwoot-supervisor.git#main
+    container_name: chatwoot-sentinela
+    restart: always
+    env_file: .env
+    ports:
+      - "5000:5000"
+    volumes:
+      - chatwoot_supervisor_db:/app/database
+    environment:
+      - TZ=America/Sao_Paulo
+      - DATABASE_URL=/app/database/configuracoes.db
+
+volumes:
+  chatwoot_supervisor_db:
+    driver: local

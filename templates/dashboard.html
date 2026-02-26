@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Kluh Supervisor - Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background: #0d1117; color: #c9d1d9; }
+        .card { background: #161b22; border: 1px solid #30363d; }
+        .list-group-item { background: #161b22; color: #c9d1d9; border: 1px solid #30363d; cursor: pointer; }
+        .list-group-item:hover { background: #1f242c; color: #58a6ff; }
+        .form-control { background: #0d1117; border: 1px solid #30363d; color: white; }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-dark mb-4 border-bottom border-secondary">
+        <div class="container-fluid px-4">
+            <span class="navbar-brand fw-bold text-info">KLUH SOFTWARE // GESTÃO</span>
+            <a href="/logout" class="btn btn-outline-danger btn-sm">Sair</a>
+        </div>
+    </nav>
+
+    <div class="container-fluid px-4">
+        <div class="row">
+            <div class="col-md-3">
+                <div class="card">
+                    <div class="card-header font-weight-bold">OPERADORES</div>
+                    <div id="lista-agentes" class="list-group list-group-flush" style="max-height: 80vh; overflow-y: auto;"></div>
+                </div>
+            </div>
+            <div class="col-md-9">
+                <div id="editor" class="card p-4 d-none">
+                    <h3 id="edit-nome" class="text-info mb-4">---</h3>
+                    <form id="form-escala">
+                        <input type="hidden" id="edit-id">
+                        <div class="form-check form-switch mb-4">
+                            <input class="form-check-input" type="checkbox" id="edit-ativo">
+                            <label class="form-check-label">Monitoramento Ativo</label>
+                        </div>
+                        <div class="row g-3">
+                            {% for dia in ['segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado', 'domingo'] %}
+                            <div class="col-md-4">
+                                <label class="form-label text-capitalize">{{ dia }}</label>
+                                <input type="text" class="form-control" id="edit-{{ dia }}" placeholder="08:00-18:00">
+                            </div>
+                            {% endfor %}
+                        </div>
+                        <button type="submit" class="btn btn-success mt-4 px-5 fw-bold">SALVAR</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function load() {
+            const res = await fetch('/api/agentes');
+            const data = await res.json();
+            document.getElementById('lista-agentes').innerHTML = data.map(ag => `
+                <button class="list-group-item list-group-item-action" onclick='openEdit(${JSON.stringify(ag).replace(/"/g, "&quot;")})'>
+                    ${ag.nome}
+                </button>
+            `).join('');
+        }
+
+        function openEdit(ag) {
+            document.getElementById('editor').classList.remove('d-none');
+            document.getElementById('edit-nome').innerText = ag.nome;
+            document.getElementById('edit-id').value = ag.agente_id;
+            document.getElementById('edit-ativo').checked = ag.ativo === 1;
+            ['segunda','terca','quarta','quinta','sexta','sabado','domingo'].forEach(d => {
+                document.getElementById('edit-'+d).value = ag[d] || '';
+            });
+        }
+
+        document.getElementById('form-escala').onsubmit = async (e) => {
+            e.preventDefault();
+            const payload = {
+                agente_id: document.getElementById('edit-id').value,
+                nome: document.getElementById('edit-nome').innerText,
+                ativo: document.getElementById('edit-ativo').checked ? 1 : 0
+            };
+            ['segunda','terca','quarta','quinta','sexta','sabado','domingo'].forEach(d => {
+                payload[d] = document.getElementById('edit-'+d).value;
+            });
+            await fetch('/api/salvar', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+            alert('Escala salva!');
+            load();
+        }
+        load();
+    </script>
+</body>
+</html>

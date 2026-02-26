@@ -2,50 +2,95 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <title>Kluh Supervisor - Dashboard</title>
+    <title>Kluh Sentinela - Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { background: #0d1117; color: #c9d1d9; }
-        .card { background: #161b22; border: 1px solid #30363d; }
-        .list-group-item { background: #161b22; color: #c9d1d9; border: 1px solid #30363d; cursor: pointer; }
-        .list-group-item:hover { background: #1f242c; color: #58a6ff; }
-        .form-control { background: #0d1117; border: 1px solid #30363d; color: white; }
+        body { background: #0d1117; color: #e6edf3; }
+        .navbar { border-bottom: 1px solid #30363d; background: #161b22 !important; }
+        .card { background: #161b22; border: 1px solid #30363d; border-radius: 10px; }
+        
+        /* Fontes da Lista Lateral */
+        .list-group-item { 
+            background: #161b22; 
+            color: #f0f6fc !important; 
+            border: 1px solid #30363d; 
+            padding: 15px; 
+            font-weight: 500;
+        }
+        .list-group-item:hover { background: #1f242c; color: #58a6ff !important; }
+        
+        /* Fontes do Formulário e Labels */
+        .text-info-custom { color: #58a6ff !important; font-weight: 700; }
+        .form-label { color: #f0f6fc !important; font-weight: 600; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.5px; }
+        .form-control { 
+            background: #0d1117 !important; 
+            border: 1px solid #30363d !important; 
+            color: #ffffff !important; 
+            font-weight: 500; 
+            padding: 10px;
+        }
+        .form-control:focus { border-color: #58a6ff; box-shadow: 0 0 0 1px #58a6ff; }
+        
+        .btn-success { background-color: #238636; border: none; font-weight: bold; padding: 12px 30px; }
+        .btn-success:hover { background-color: #2ea043; }
+        
+        /* Custom Scrollbar */
+        #lista-agentes::-webkit-scrollbar { width: 5px; }
+        #lista-agentes::-webkit-scrollbar-thumb { background: #30363d; border-radius: 10px; }
     </style>
 </head>
 <body>
-    <nav class="navbar navbar-dark bg-dark mb-4 border-bottom border-secondary">
+    <nav class="navbar navbar-dark mb-4">
         <div class="container-fluid px-4">
-            <span class="navbar-brand fw-bold text-info">KLUH SOFTWARE // GESTÃO</span>
-            <a href="/logout" class="btn btn-outline-danger btn-sm">Sair</a>
+            <span class="navbar-brand fw-bold text-info-custom">KLUH SOFTWARE // GESTÃO SENTINELA</span>
+            <a href="/logout" class="btn btn-outline-danger btn-sm">Sair do Painel</a>
         </div>
     </nav>
 
     <div class="container-fluid px-4">
-        <div class="row">
+        <div class="row g-4">
             <div class="col-md-3">
-                <div class="card">
-                    <div class="card-header font-weight-bold">OPERADORES</div>
-                    <div id="lista-agentes" class="list-group list-group-flush" style="max-height: 80vh; overflow-y: auto;"></div>
+                <div class="card h-100 shadow-sm">
+                    <div class="card-header border-secondary py-3">
+                        <h6 class="mb-0 fw-bold text-white">OPERADORES</h6>
+                    </div>
+                    <div id="lista-agentes" class="list-group list-group-flush" style="max-height: 80vh; overflow-y: auto;">
+                        <p class="p-3 text-muted">Carregando...</p>
+                    </div>
                 </div>
             </div>
+            
             <div class="col-md-9">
-                <div id="editor" class="card p-4 d-none">
-                    <h3 id="edit-nome" class="text-info mb-4">---</h3>
+                <div id="placeholder" class="card p-5 text-center">
+                    <h5 class="text-muted">Selecione um agente à esquerda para gerenciar horários.</h5>
+                </div>
+
+                <div id="editor" class="card p-4 d-none shadow-lg">
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <h2 id="edit-nome" class="text-info-custom mb-0">---</h2>
+                        <span id="badge-id" class="badge bg-dark text-secondary border border-secondary">ID: --</span>
+                    </div>
+
                     <form id="form-escala">
                         <input type="hidden" id="edit-id">
-                        <div class="form-check form-switch mb-4">
-                            <input class="form-check-input" type="checkbox" id="edit-ativo">
-                            <label class="form-check-label">Monitoramento Ativo</label>
+                        
+                        <div class="form-check form-switch p-3 border border-secondary rounded mb-4 bg-dark">
+                            <input class="form-check-input ms-0 me-3" type="checkbox" id="edit-ativo">
+                            <label class="form-check-label fw-bold text-white">Monitoramento Ativo pelo Robô</label>
                         </div>
+
                         <div class="row g-3">
                             {% for dia in ['segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado', 'domingo'] %}
                             <div class="col-md-4">
-                                <label class="form-label text-capitalize">{{ dia }}</label>
-                                <input type="text" class="form-control" id="edit-{{ dia }}" placeholder="08:00-18:00">
+                                <label class="form-label">{{ dia }}</label>
+                                <input type="text" class="form-control" id="edit-{{ dia }}" placeholder="Ex: 08:00-18:00">
                             </div>
                             {% endfor %}
                         </div>
-                        <button type="submit" class="btn btn-success mt-4 px-5 fw-bold">SALVAR</button>
+
+                        <div class="mt-5 text-end">
+                            <button type="submit" class="btn btn-success text-uppercase">Salvar Alterações</button>
+                        </div>
                     </form>
                 </div>
             </div>
@@ -56,17 +101,22 @@
         async function load() {
             const res = await fetch('/api/agentes');
             const data = await res.json();
-            document.getElementById('lista-agentes').innerHTML = data.map(ag => `
-                <button class="list-group-item list-group-item-action" onclick='openEdit(${JSON.stringify(ag).replace(/"/g, "&quot;")})'>
+            const lista = document.getElementById('lista-agentes');
+            lista.innerHTML = data.map(ag => `
+                <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" 
+                        onclick='openEdit(${JSON.stringify(ag).replace(/"/g, "&quot;")})'>
                     ${ag.nome}
+                    <div class="rounded-circle ${ag.ativo ? 'bg-success' : 'bg-danger'}" style="width: 8px; height: 8px;"></div>
                 </button>
             `).join('');
         }
 
         function openEdit(ag) {
+            document.getElementById('placeholder').classList.add('d-none');
             document.getElementById('editor').classList.remove('d-none');
             document.getElementById('edit-nome').innerText = ag.nome;
             document.getElementById('edit-id').value = ag.agente_id;
+            document.getElementById('badge-id').innerText = "ID: " + ag.agente_id;
             document.getElementById('edit-ativo').checked = ag.ativo === 1;
             ['segunda','terca','quarta','quinta','sexta','sabado','domingo'].forEach(d => {
                 document.getElementById('edit-'+d).value = ag[d] || '';
@@ -83,13 +133,16 @@
             ['segunda','terca','quarta','quinta','sexta','sabado','domingo'].forEach(d => {
                 payload[d] = document.getElementById('edit-'+d).value;
             });
-            await fetch('/api/salvar', {
+
+            const res = await fetch('/api/salvar', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(payload)
             });
-            alert('Escala salva!');
-            load();
+            if(res.ok) {
+                alert('Configuração salva para ' + payload.nome);
+                load();
+            }
         }
         load();
     </script>

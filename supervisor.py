@@ -1,6 +1,6 @@
 import os, sqlite3, requests, threading, time
 from datetime import datetime
-from flask import Flask, render_template, request, redirect, url_for, session, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify, flash
 from dotenv import load_dotenv
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import SYNCHRONOUS
@@ -30,10 +30,15 @@ def login_page():
 
 @app.route('/auth', methods=['POST'])
 def auth():
-    if request.form['user'] == os.getenv('ADMIN_USER') and request.form['pass'] == os.getenv('ADMIN_PASS'):
+    user = request.form.get('user')
+    password = request.form.get('pass')
+    
+    if user == os.getenv('ADMIN_USER') and password == os.getenv('ADMIN_PASS'):
         session['logged_in'] = True
         return redirect(url_for('dashboard_page'))
-    return "Acesso negado", 401
+    else:
+        flash("Usuário ou senha incorretos!", "danger")
+        return redirect(url_for('login_page'))
 
 @app.route('/logout')
 def logout():
